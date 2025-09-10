@@ -1,0 +1,126 @@
+name: Create Release
+run-name: >-
+  ${{ github.event.inputs.dryrun == 'true' && 'Release (dryrun)' || format('Release {0}', github.event.inputs.version) }}
+
+permissions:
+  contents: write
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (without v prefix, e.g. 1.0.0)'
+        required: true
+        type: string
+      dryrun:
+        description: 'Dry run (no tag/release)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    outputs:
+      TAG_NAME: ${{ steps.tagname.outputs.TAG_NAME }}
+      exists: ${{ steps.check_tag.outputs.exists }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            GOOS: linux
+            GOARCH: amd64
+            EXT: ""
+          - os: windows-latest
+            GOOS: windows
+            GOARCH: amd64
+            EXT: ".exe"
+          - os: macos-latest
+            GOOS: darwin
+            GOARCH: arm64
+            EXT: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Git user
+        shell: bash
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Prepare tag name
+        id: tagname
+        shell: bash
+        run: |
+          VERSION_INPUT="${{ github.event.inputs.version }}"
+          if [[ "$VERSION_INPUT" =~ ^v ]]; then
+            TAG_NAME="$VERSION_INPUT"
+          else
+            TAG_NAME="v$VERSION_INPUT"
+          fi
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        shell: bash
+        run: |
+          if git rev-parse "${{ steps.tagname.outputs.TAG_NAME }}" >/dev/null 2>&1; then
+            echo "Tag exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag does not exist"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail if tag exists and not dryrun
+        if: steps.check_tag.outputs.exists == 'true' && (!github.event.inputs.dryrun || github.event.inputs.dryrun == 'false')
+        shell: bash
+        run: |
+          echo "Tag ${{ steps.tagname.outputs.TAG_NAME }} already exists. Aborting release."
+          exit 1
+
+      - name: Create tag and push
+        if: steps.check_tag.outputs.exists == 'false' && (!github.event.inputs.dryrun || github.event.inputs.dryrun == 'false') && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          git tag ${{ steps.tagname.outputs.TAG_NAME }}
+          git push origin ${{ steps.tagname.outputs.TAG_NAME }}
+
+      - name: Build binary
+        if: steps.check_tag.outputs.exists == 'false' && (!github.event.inputs.dryrun || github.event.inputs.dryrun == 'false')
+        shell: bash
+        run: |
+          GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} go build -o lazy-open-commity-${{ matrix.GOOS }}-${{ matrix.GOARCH }}${{ matrix.EXT }}
+
+      - name: Upload artifact
+        if: steps.check_tag.outputs.exists == 'false' && (!github.event.inputs.dryrun || github.event.inputs.dryrun == 'false')
+        uses: actions/upload-artifact@v4
+        with:
+          name: lazy-open-commity-${{ matrix.GOOS }}-${{ matrix.GOARCH }}${{ matrix.EXT }}
+          path: lazy-open-commity-${{ matrix.GOOS }}-${{ matrix.GOARCH }}${{ matrix.EXT }}
+
+  release_assets:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.dryrun == 'false' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.TAG_NAME }}
+          name: ${{ needs.build.outputs.TAG_NAME }}
+          generate_release_notes: true
+          files: ./artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
