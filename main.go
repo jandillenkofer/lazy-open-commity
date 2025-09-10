@@ -65,6 +65,7 @@ func main() {
 	prompt := fmt.Sprintf(promptTemplate, topCommitMessageCount)
 	prompt = extendPromptWithCodeChanges(prompt)
 	prompt = extendPromptWithCommitHistory(prompt)
+	prompt = extendPromptWithBranchName(prompt)
 
 	jsonResponse, err := promptAIAgent(prompt, gpt4o)
 	if err != nil {
@@ -144,17 +145,6 @@ func checkForStagedChanges() {
 	}
 }
 
-func extendPromptWithCommitHistory(prompt string) string {
-	prompt += "# List of the last commits (additional context):\n"
-	lastCommits, err := runCommandAndGetOutput("git", "log", "-n", "5", "--pretty=oneline", "--abbrev-commit")
-	if err != nil {
-		fmt.Println("Error running 'git log -n 5 --pretty=oneline --abbrev-commit':", err)
-		os.Exit(1)
-	}
-	prompt += "```console\n" + "$ git log -n 5 --pretty=oneline --abbrev-commit\n" + lastCommits + "```\n"
-	return prompt
-}
-
 func extendPromptWithCodeChanges(prompt string) string {
 	prompt += "# Diff to analyze:\n"
 	diffStats, err := runCommandAndGetOutput("git", "diff", "--cached", "--stat")
@@ -169,5 +159,27 @@ func extendPromptWithCodeChanges(prompt string) string {
 		os.Exit(1)
 	}
 	prompt += "```console\n" + "$ git diff --cached\n" + diff + "```\n"
+	return prompt
+}
+
+func extendPromptWithCommitHistory(prompt string) string {
+	prompt += "# List of the last commits (additional context):\n"
+	lastCommits, err := runCommandAndGetOutput("git", "log", "-n", "5", "--pretty=oneline", "--abbrev-commit")
+	if err != nil {
+		fmt.Println("Error running 'git log -n 5 --pretty=oneline --abbrev-commit':", err)
+		os.Exit(1)
+	}
+	prompt += "```console\n" + "$ git log -n 5 --pretty=oneline --abbrev-commit\n" + lastCommits + "```\n"
+	return prompt
+}
+
+func extendPromptWithBranchName(prompt string) string {
+	branchName, err := runCommandAndGetOutput("git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		fmt.Println("Error running 'git rev-parse --abbrev-ref HEAD':", err)
+		os.Exit(1)
+	}
+	prompt += "# Current branch name:\n"
+	prompt += "```console\n" + "$ git rev-parse --abbrev-ref HEAD\n" + branchName + "```\n"
 	return prompt
 }
