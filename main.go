@@ -40,8 +40,8 @@ Here is an example of the output format:
 type AIModel string
 
 const (
-	gpt41 = AIModel("github-copilot/gpt-4.1")
-	gpt4o = AIModel("github-copilot/gpt-4o")
+	gpt41 = AIModel("github-copilot-enterprise/gpt-4.1")
+	gpt4o = AIModel("github-copilot-enterprise/gpt-4o")
 )
 
 func runCommandAndGetOutput(name string, args ...string) (string, error) {
