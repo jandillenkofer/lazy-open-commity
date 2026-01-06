@@ -51,7 +51,10 @@ func runCommandAndGetOutput(name string, args ...string) (string, error) {
 }
 
 func promptAIAgent(prompt string, model AIModel) (string, error) {
-	return runCommandAndGetOutput("opencode", "-m", string(model), "run", prompt)
+	cmd := exec.Command("opencode", "-m", string(model), "run")
+	cmd.Stdin = strings.NewReader(prompt)
+	output, err := cmd.Output()
+	return string(output), err
 }
 
 type CommitMessage struct {
